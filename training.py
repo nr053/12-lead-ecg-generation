@@ -34,20 +34,20 @@ dataset = INCART_LOADER(config['path_to_data'], config["window_size"], config["h
 #make train/test split
 
 
-# #dataloaders
-# dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False)
-# # train_dataloader = DataLoader(train_set, batch_size=config.batch_size, shuffle=True)
-# # test_dataloader = DataLoader(test_set, batch_size=config.batch_size, shuffle=True)
+#dataloaders
+dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False)
+# train_dataloader = DataLoader(train_set, batch_size=config.batch_size, shuffle=True)
+# test_dataloader = DataLoader(test_set, batch_size=config.batch_size, shuffle=True)
 
-# #define model and hyperparameters
-# model = UNet()
-# if torch.cuda.is_available():
-#     model.cuda()
-# learning_rate = 10e-5
-# n_epochs = 100
-# #drop out = 0.5, 0.1
-# loss_fn = nn.MSELoss() #or RMSE???
-# optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
+#define model and hyperparameters
+model = UNet()
+if torch.cuda.is_available():
+    model.cuda()
+learning_rate = 10e-5
+n_epochs = 100
+#drop out = 0.5, 0.1
+loss_fn = nn.MSELoss() #or RMSE???
+optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 
 
