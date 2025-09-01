@@ -38,13 +38,25 @@ dataset = INCART_LOADER(config['path_to_data'], config["window_size"], config["h
 dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False)
 # train_dataloader = DataLoader(train_set, batch_size=config.batch_size, shuffle=True)
 # test_dataloader = DataLoader(test_set, batch_size=config.batch_size, shuffle=True)
+#dataloaders
+dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False)
+# train_dataloader = DataLoader(train_set, batch_size=config.batch_size, shuffle=True)
+# test_dataloader = DataLoader(test_set, batch_size=config.batch_size, shuffle=True)
 
 #define model and hyperparameters
-model = UNet()
-if torch.cuda.is_available():
-    model.cuda()
-learning_rate = 10e-5
-n_epochs = 100
+
+#GPU stuff
+if torch.cuda.is_available(): #for NVIDIA graphics card
+    device = torch.device("cuda")
+    default_dtype = torch.float64
+elif torch.backends.mps.is_available(): #M1 graphics card
+    device = torch.device("mps")
+    default_dtype = torch.float32
+    torch.set_default_dtype(torch.float32)
+#model definition and hyperparameters
+model = UNet().to(device)
+learning_rate = 10e-6
+n_epochs = 10000
 #drop out = 0.5, 0.1
 loss_fn = nn.MSELoss() #or RMSE???
 optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -72,41 +84,41 @@ optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 # # #     return batch_loss
 
-# epoch_loss_train = []
-# epoch_loss_test = []
-# epoch_number = 1
+epoch_loss = []
+#epoch_loss_test = []
+epoch_number = 1
 
 
-# for epoch in tqdm(range(n_epochs)):
-#     #train step
-#     print("")
-#     print("-------- Training loop ----------")
-#     print("")
-#     model.train()
+for epoch in tqdm(range(n_epochs)):
+    #train step
+    print("")
+    print("-------- Training loop ----------")
+    print("")
+    model.train()
     
-#     batch_loss = []
-#     loop = tqdm(dataloader)
+    batch_loss = []
+    loop = tqdm(dataloader)
     
 
-#     for sample in loop:
-#         #make prediction
-#         prediction = model(sample['stft'].cuda()) #first 3 leads as input
+    for sample in loop:
+        #make prediction
+        prediction = model(sample['x'].to(device, dtype=default_dtype)) #first 3 leads as input
         
-#         #calculate loss
-#         loss = loss_fn(prediction.cuda(), sample['ecg'].cuda()) #all 12 leads as ground truth
-#         batch_loss_train.append(loss.item())
+        #calculate loss
+        loss = loss_fn(prediction.to(device, dtype=default_dtype), sample['y'].to(device, dtype=default_dtype)) #all 12 leads as ground truth
+        batch_loss.append(loss.item())
 
-#         #backpropogation step
-#         optimiser.zero_grad()
-#         loss.backward()
-#         optimiser.step()
+        #backpropogation step
+        optimiser.zero_grad()
+        loss.backward()
+        optimiser.step()
 
-#         data.add_prediction(sample)
+        #data.add_prediction(sample)
 
-#     #track mean train batch loss over epochs
-#     #train_loss = batch_loss_train
-#     #train_loss = train_loop(model, dataloader, loss_fn)
-#     epoch_loss_train.append(mean(batch_loss_train))
+    #track mean train batch loss over epochs
+    #train_loss = batch_loss_train
+    #train_loss = train_loop(model, dataloader, loss_fn)
+    epoch_loss.append(mean(batch_loss))
 
 
 #     #test step
@@ -140,9 +152,8 @@ optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
 #     epoch_number+=1
 
 
-# plt.plot(epoch_loss_train)
-# plt.plot(epoch_loss_test)
-# plt.savefig("loss_plot.png")
+plt.plot(epoch_loss)
+plt.savefig("loss_plot.png")
 
 
 

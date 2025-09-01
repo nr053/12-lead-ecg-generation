@@ -1,5 +1,5 @@
 #repo config
-path_to_data: "/Users/toucanfirm/Documents/Zibra/dev/Cortrium/lead_gen/data/incart/physionet.org/files/incartdb/1.0.0"
+path_to_data: "/Users/toucanfirm/Documents/Zibra/dev/Cortrium/12-lead-ecg-generation/data/incart/physionet.org/files/incartdb/1.0.0"
 #model parameters
 s_freq: 257
 channel_map: [0,1,2]

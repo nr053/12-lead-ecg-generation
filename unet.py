@@ -29,7 +29,7 @@ class UNet(nn.Module):
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 284x284x64
 
         #input: 5x5x40
-        self.flatten1 = nn.Flatten(0,2)
+        self.flatten1 = nn.Flatten()
 
         #input: 1x1280
         self.fc1 = nn.Linear(960,256)
@@ -48,7 +48,7 @@ class UNet(nn.Module):
 
 
         #input: 1x1280
-        self.reshape = nn.Unflatten(0, (80,4,3))
+        self.reshape = nn.Unflatten(1, (80,4,3))
 
         #input 5x5x80
         self.d1 = nn.ConvTranspose2d(80, 50, kernel_size=3, padding=1)
@@ -100,48 +100,50 @@ class UNet(nn.Module):
 
     def forward(self, x):
         #first block of encoder
-        print(f"size of input: {x.shape}")
+        #print(f"size of input: {x.shape}")
         x = self.e1(x)
-        print(f"size after first conv: {x.shape}")
+        #print(f"size after first conv: {x.shape}")
         x = self.pool1(x)
-        print(f"size after first pool block: {x.shape}")
+        #print(f"size after first pool block: {x.shape}")
         #second block
         x = self.e2(x)
-        print(f"size after second conv: {x.shape}")
+        #print(f"size after second conv: {x.shape}")
         x = self.pool2(x)
-        print(f"size after second pool block: {x.shape}")
+        #print(f"size after second pool block: {x.shape}")
         #flatten
         x = self.flatten1(x)
-        print(f"size after flatten: {x.shape}")
+        #print(f"size after flatten: {x.shape}")
         #fully connected layers
         x = self.fc1(x)
-        print(f"size after first fully connected: {x.shape}")
+        #print(f"size after first fully connected: {x.shape}")
         x = self.fc2(x)
-        print(f"size after second fully connected: {x.shape}")
+        #print(f"size after second fully connected: {x.shape}")
 
         #DECODER
         x = self.fc3(x)
-        print(f"size after third fully connected: {x.shape}")
+        #print(f"size after third fully connected: {x.shape}")
         x = self.fc4(x)
-        print(f"size after fourth fully connected: {x.shape}")
+        #print(f"size after fourth fully connected: {x.shape}")
         #unflatten
         x = self.reshape(x)
-        print(f"size after reshape: {x.shape}")
+        #print(f"size after reshape: {x.shape}")
         #inverse conv
         x = self.d1(x)
-        print(f"size after first decoder: {x.shape}")
+        #print(f"size after first decoder: {x.shape}")
         #upsample
-        x = x.unsqueeze(1)
-        print(f"size after squeeze: {x.shape}")
+        #x = x.unsqueeze(1)
+        #print(f"size after squeeze: {x.shape}")
         x = self.upsample1(x)
-        print(f"size after first upsample: {x.shape}")      
+        #print(f"size after first upsample: {x.shape}")      
         x = x.squeeze(1)  
         x = self.d2(x)
-        print(f"size after second decoder: {x.shape}")
-        x = x.unsqueeze(1)
+        #print(f"size after second decoder: {x.shape}")
+        #x = x.unsqueeze(1)
+        #print(f"size after squeeze: {x.shape}")
         x = self.upsample2(x)
-        x = x.squeeze(1)
-        print(f"size after second upsample: {x.shape}")
+        #print(f"size after upsample: {x.shape}")
+        #x = x.squeeze(1)
+        #print(f"size after second upsample: {x.shape}")
 
 
         return x

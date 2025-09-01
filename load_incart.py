@@ -27,7 +27,7 @@ class INCART_LOADER(data.Dataset):
 
     def __getitem__(self, idx):
         sample = self.df.iloc[idx]
-        input = sample.x[
+        input = sample.stft[
             [self.channel_map[0], 
             self.channel_map[0]+1,
             self.channel_map[1],
@@ -37,7 +37,7 @@ class INCART_LOADER(data.Dataset):
             ,:]
 
 
-        return {'x':input, 'y':sample.x}
+        return {'x':input, 'y':sample.stft}
 
     def load_file(self, filename):
         """The procedure to handle a record:
