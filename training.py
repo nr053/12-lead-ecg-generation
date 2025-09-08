@@ -39,9 +39,7 @@ dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False)
 # train_dataloader = DataLoader(train_set, batch_size=config.batch_size, shuffle=True)
 # test_dataloader = DataLoader(test_set, batch_size=config.batch_size, shuffle=True)
 #dataloaders
-dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False)
-# train_dataloader = DataLoader(train_set, batch_size=config.batch_size, shuffle=True)
-# test_dataloader = DataLoader(test_set, batch_size=config.batch_size, shuffle=True)
+
 
 #define model and hyperparameters
 
@@ -52,11 +50,12 @@ if torch.cuda.is_available(): #for NVIDIA graphics card
 elif torch.backends.mps.is_available(): #M1 graphics card
     device = torch.device("mps")
     default_dtype = torch.float32
-    torch.set_default_dtype(torch.float32)
+torch.set_default_dtype(default_dtype)
+print(f"Using device {device}")
 #model definition and hyperparameters
 model = UNet().to(device)
-learning_rate = 10e-6
-n_epochs = 10000
+learning_rate = 10e-3
+n_epochs = 500
 #drop out = 0.5, 0.1
 loss_fn = nn.MSELoss() #or RMSE???
 optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -153,7 +152,7 @@ for epoch in tqdm(range(n_epochs)):
 
 
 plt.plot(epoch_loss)
-plt.savefig("loss_plot.png")
+plt.savefig("figures/loss_plots/loss_plot_7.png")
 
 
 
