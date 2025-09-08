@@ -7,6 +7,7 @@ datab/
 
 #figures
 plots/
+figures/
 #*.png
 
 # Byte-compiled / optimized / DLL files
