@@ -9,6 +9,7 @@ from unet import UNet
 import torch
 import torch.utils.data as data
 import yaml
+from sklearn import preprocessing
 
 
 class INCART_LOADER(data.Dataset):
@@ -54,6 +55,11 @@ class INCART_LOADER(data.Dataset):
         signal = wfdb.rdrecord(filename)
         annotation = wfdb.rdann(filename, extension="atr") 
 
+        #filter the signal
+        #b, a = scipy.signal.butter(5, [3, 50], btype='bandpass', fs=257)
+        #signal_filtered = scipy.signal.lfilter(b, a, signal.p_signal)
+        signal_filtered = signal.p_signal #currently no filtering
+
         #init lists to build set dict
         ecg_strips = []
         annotation_strips = []
@@ -69,9 +75,10 @@ class INCART_LOADER(data.Dataset):
         else:
             for beat_position, beat_annotation in zip(annotation.sample, annotation.symbol):
                 #there must be 0.5 seconds of signal either side of the beat position
-                if (beat_position > 128) and (beat_position < signal.p_signal.shape[0] - 128): 
-                    ecg_strip = signal.p_signal[beat_position-128:beat_position+128,:]
+                if (beat_position > 128) and (beat_position < signal_filtered.shape[0] - 128): 
+                    ecg_strip = signal_filtered[beat_position-128:beat_position+128,:]
                     ecg_strip = np.swapaxes(ecg_strip, 0, 1)
+                    ecg_strip = preprocessing.normalize(ecg_strip, axis=1) #normalise
                     ecg_strips.append(ecg_strip)
                     annotation_strips.append(beat_annotation)
 
@@ -94,8 +101,6 @@ class INCART_LOADER(data.Dataset):
             fs (int): sampling frequency of ecg
             num_channels (int): number of channels used as input to the model """
 
-        #filtering????
-
         ecg_strip_transformed = []
 
         for channel in ecg_strip:
@@ -108,7 +113,7 @@ class INCART_LOADER(data.Dataset):
 
 
 
-    def plot(self, idx, reconstructed=False):
+    def plot(self, idx, channel_ids=[0,1,2,3,4,5,6,7,8,9,10,11], reconstructed=False):
         """Plot the ECG channels
         if reconstructed = True, the signal is reconstructed
         from the Fourier Transform"""
@@ -116,12 +121,14 @@ class INCART_LOADER(data.Dataset):
             ecg = self.reconstruct_signal(idx)
         else: 
             ecg = self.df.ecg[idx]
-        fig, axs = plt.subplots(12,1)
-        fig.suptitle(f"Reconstructed: {reconstructed}, beat type: {self.df.annotation[idx]}")
-        for i in range(len(ecg)):
-            axs[i].plot(ecg[i])
+        fig, axs = plt.subplots(len(channel_ids),1)
+        fig.suptitle(f"Reconstructed: {reconstructed},\n"
+                    f"beat type: {self.df.annotation[idx]},\n"
+                    f"channel(s): {channel_ids}")
+        for i in range(len(channel_ids)):
+            axs[i].plot(ecg[channel_ids[i]])
 
-        plt.savefig(f"plots/sample_{idx}_reconstructed_{reconstructed}.png")
+        plt.savefig(f"figures/sample_plots/sample_{idx}_reconstructed_{reconstructed}.png")
 
 
     def create_data_set(self):
