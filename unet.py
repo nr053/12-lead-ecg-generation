@@ -12,6 +12,56 @@ class PrintSize(nn.Module):
             self.first = False
         return x
 
+
+class Encoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv1 = nn.Conv2d(6, 50, kernel_size=3, padding=1) # output: 570x570x64
+        self.conv2 = nn.Conv2d(50, 80, kernel_size=3, padding=1) # output: 568x568x64
+        
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2) # output: 284x284x64
+
+        self.fc1 = nn.Linear(960,256)
+        self.fc2 = nn.Linear(256,32)
+
+        #self.relu = nn.ReLU()  
+
+    def forward(self, x):
+        x1 = self.pool(nn.ReLU(self.conv1(x)))  # [B, 16, 8, 45] chatgpt # [128, 50, 16, 91]
+        x2 = self.pool(nn.ReLU(self.conv2(x1)))  # [B, 32, 4, 22]
+        x3 = torch.flatten(x2, start_dim=1)  # [B, 2816]
+        x4 = nn.ReLU(self.fc1(x3))  # [B, 128]
+        x5 = self.fc2(x4)  # [B, 32]
+        return x5
+
+class Decoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(32, 256)
+        self.fc2 = nn.Linear(256, 960)
+
+        self.deconv1 = nn.ConvTranspose2d(80, 50, kernel_size=3, padding=1)
+        self.deconv2 = nn.ConvTranspose2d(50, 24, kernel_size=3, padding=1)
+
+        def forward(self, x):
+            x1 = nn.ReLU(self.fc1(x))
+            x2 = nn.ReLU(self.fc2(x1))
+            x3 = x2.view(-1, 80, 4, 3)
+            x4 = nn.ReLU(self.deconv1(x3))
+            x4 = nn.ReLU(self.deconv2(x4))
+
+class AutoEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.encoder = Encoder()
+        self.decoder = Decoder()
+
+    def forward(self, x):
+        latent = self.encoder(x)
+        output = self.decoder(latent)
+        return out
+
 class UNet(nn.Module):
     def __init__(self):
         super().__init__()
@@ -23,120 +73,68 @@ class UNet(nn.Module):
         # input: 16x16x3
         self.e1 = nn.Conv2d(6, 50, kernel_size=3, padding=1) # output: 570x570x64
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 284x284x64
-
+        self.activation_func = nn.ReLU()
         # input: 7x7x50
         self.e2 = nn.Conv2d(50, 80, kernel_size=3, padding=1) # output: 568x568x64
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 284x284x64
-
         #input: 5x5x40
         self.flatten1 = nn.Flatten()
-
         #input: 1x1280
         self.fc1 = nn.Linear(960,256)
-
         #input: 1x256
         self.fc2 = nn.Linear(256,32)
 
-
         #DECODER
-
         #input: 1x32
         self.fc3 = nn.Linear(32, 256)
-
         #input: 1x256
         self.fc4 = nn.Linear(256, 960)
-
-
         #input: 1x1280
         self.reshape = nn.Unflatten(1, (80,4,3))
-
         #input 5x5x80
         self.d1 = nn.ConvTranspose2d(80, 50, kernel_size=3, padding=1)
         self.upsample1 = nn.Upsample(size=(8,7))
-
         #input 7x7x50
         self.d2 = nn.ConvTranspose2d(50, 24, kernel_size=3, padding=1)
         self.upsample2 = nn.Upsample(size=(16,14))
-        # # input: 284x284x64
-        # self.e21 = nn.Conv2d(64, 128, kernel_size=3, padding=1) # output: 282x282x128
-        # self.e22 = nn.Conv2d(128, 128, kernel_size=3, padding=1) # output: 280x280x128
-        # self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 140x140x128
 
-        # # input: 140x140x128
-        # self.e31 = nn.Conv2d(128, 256, kernel_size=3, padding=1) # output: 138x138x256
-        # self.e32 = nn.Conv2d(256, 256, kernel_size=3, padding=1) # output: 136x136x256
-        # self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 68x68x256
-
-        # # input: 68x68x256
-        # self.e41 = nn.Conv2d(256, 512, kernel_size=3, padding=1) # output: 66x66x512
-        # self.e42 = nn.Conv2d(512, 512, kernel_size=3, padding=1) # output: 64x64x512
-        # self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 32x32x512
-
-        # # input: 32x32x512
-        # self.e51 = nn.Conv2d(512, 1024, kernel_size=3, padding=1) # output: 30x30x1024
-        # self.e52 = nn.Conv2d(1024, 1024, kernel_size=3, padding=1) # output: 28x28x1024
-
-
-        # # Decoder
-        # self.upconv1 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
-        # self.d11 = nn.Conv2d(1024, 512, kernel_size=3, padding=1)
-        # self.d12 = nn.Conv2d(512, 512, kernel_size=3, padding=1)
-
-        # self.upconv2 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
-        # self.d21 = nn.Conv2d(512, 256, kernel_size=3, padding=1)
-        # self.d22 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-
-        # self.upconv3 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
-        # self.d31 = nn.Conv2d(256, 128, kernel_size=3, padding=1)
-        # self.d32 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-
-        # self.upconv4 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
-        # self.d41 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
-        # self.d42 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-
-        # # Output layer
-        # self.outconv = nn.Conv2d(64, n_class, kernel_size=1)
+        self.fc5 = nn.Linear(5376, 5376)
+        self.reshape_final = nn.Unflatten(1, (24,16,14))
 
 
     def forward(self, x):
         #first block of encoder
-        #print(f"size of input: {x.shape}")
         x = self.e1(x)
-        #print(f"size after first conv: {x.shape}")
         x = self.pool1(x)
-        #print(f"size after first pool block: {x.shape}")
+        x = self.activation_func(x)
         #second block
         x = self.e2(x)
-        #print(f"size after second conv: {x.shape}")
         x = self.pool2(x)
-        #print(f"size after second pool block: {x.shape}")
+        x = self.activation_func(x)
         #flatten
         x = self.flatten1(x)
-        #print(f"size after flatten: {x.shape}")
         #fully connected layers
         x = self.fc1(x)
-        #print(f"size after first fully connected: {x.shape}")
+        x = self.activation_func(x)
         x = self.fc2(x)
-        #print(f"size after second fully connected: {x.shape}")
+        #x = self.activation_func(x)
 
         #DECODER
         x = self.fc3(x)
-        #print(f"size after third fully connected: {x.shape}")
+        x = self.activation_func(x)
         x = self.fc4(x)
-        #print(f"size after fourth fully connected: {x.shape}")
+        x = self.activation_func(x)
         #unflatten
         x = self.reshape(x)
-        #print(f"size after reshape: {x.shape}")
         #inverse conv
         x = self.d1(x)
-        #print(f"size after first decoder: {x.shape}")
+        x = self.activation_func(x)
         #upsample
         #x = x.unsqueeze(1)
-        #print(f"size after squeeze: {x.shape}")
         x = self.upsample1(x)
-        #print(f"size after first upsample: {x.shape}")      
         x = x.squeeze(1)  
         x = self.d2(x)
+        x = self.activation_func(x)
         #print(f"size after second decoder: {x.shape}")
         #x = x.unsqueeze(1)
         #print(f"size after squeeze: {x.shape}")
@@ -144,6 +142,10 @@ class UNet(nn.Module):
         #print(f"size after upsample: {x.shape}")
         #x = x.squeeze(1)
         #print(f"size after second upsample: {x.shape}")
+        x = self.flatten1(x)
+        #print(f"size after flatten: {x.shape}")
+        x = self.fc5(x)
+        x = self.reshape_final(x)
 
 
         return x
