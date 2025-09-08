@@ -55,7 +55,7 @@ print(f"Using device {device}")
 #model definition and hyperparameters
 model = UNet().to(device)
 learning_rate = 10e-3
-n_epochs = 500
+n_epochs = 100
 #drop out = 0.5, 0.1
 loss_fn = nn.MSELoss() #or RMSE???
 optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -85,7 +85,7 @@ optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 epoch_loss = []
 #epoch_loss_test = []
-epoch_number = 1
+current_epoch = 1
 
 
 for epoch in tqdm(range(n_epochs)):
@@ -117,7 +117,18 @@ for epoch in tqdm(range(n_epochs)):
     #track mean train batch loss over epochs
     #train_loss = batch_loss_train
     #train_loss = train_loop(model, dataloader, loss_fn)
-    epoch_loss.append(mean(batch_loss))
+    current_epoch_loss = mean(batch_loss)
+
+    if current_epoch == 1: #on first epoch add epoch loss to empty list and set best epoch == 1
+        best_epoch = current_epoch
+    elif current_epoch_loss < min(epoch_loss): #check if current epoch yielded better performance
+        best_epoch = current_epoch
+        torch.save(model.state_dict(), f"/state_dicts/u_net_lr_{learning_rate}_epoch_{best_epoch}.pt")
+
+    epoch_loss.append(current_epoch_loss)
+    
+
+    
 
 
 #     #test step
@@ -152,7 +163,9 @@ for epoch in tqdm(range(n_epochs)):
 
 
 plt.plot(epoch_loss)
-plt.savefig("figures/loss_plots/loss_plot_7.png")
+plt.ylabel(f"Loss: {loss_fn}")
+plt.title(f"LR: {learning_rate}, optimiser: {optimiser}, best epoch: {best_epoch}")
+plt.savefig(f"figures/loss_plots/loss_plot_LR_{learning_rate}.png")
 
 
 
