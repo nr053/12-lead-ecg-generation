@@ -1,6 +1,9 @@
 #sandbox script (for messing around and testing)
 sandbox.py
 
+#model weights
+state_dicts/
+
 #data
 data/
 datab/
