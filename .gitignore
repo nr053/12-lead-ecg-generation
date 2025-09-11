@@ -6,9 +6,8 @@ data/
 datab/
 
 #figures
-plots/
 figures/
-#*.png
+*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
