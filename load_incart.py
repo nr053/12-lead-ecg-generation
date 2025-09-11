@@ -10,7 +10,11 @@ import torch
 import torch.utils.data as data
 import yaml
 from sklearn import preprocessing
-
+import time
+from torch.utils.data import Subset
+import torch.nn.functional as F
+from tqdm import tqdm
+from sklearn.metrics import mean_squared_error
 
 class INCART_LOADER(data.Dataset):
     def __init__(self, path, window_size, hop, fs, channel_map):
@@ -50,7 +54,8 @@ class INCART_LOADER(data.Dataset):
                 possibly with metadata of patient / record ????
 
         """
-
+        print(f"Loading file: {filename}")
+        
         #load the file into a WFDB record object
         signal = wfdb.rdrecord(filename)
         annotation = wfdb.rdann(filename, extension="atr") 
@@ -73,6 +78,7 @@ class INCART_LOADER(data.Dataset):
             print("sampling frequency is not 257")
             return 
         else:
+            
             for beat_position, beat_annotation in zip(annotation.sample, annotation.symbol):
                 #there must be 0.5 seconds of signal either side of the beat position
                 if (beat_position > 128) and (beat_position < signal_filtered.shape[0] - 128): 
@@ -85,8 +91,6 @@ class INCART_LOADER(data.Dataset):
                     #preprocessing step
                     ecg_strip_transformed = self.preprocess(ecg_strip)
                     ecg_strips_transformed.append(ecg_strip_transformed)
-
-
 
         return ecg_strips, annotation_strips, ecg_strips_transformed, signal, annotation
 
@@ -108,12 +112,11 @@ class INCART_LOADER(data.Dataset):
             ecg_strip_transformed.append(Sx.real)
             ecg_strip_transformed.append(Sx.imag)
             
-
         return ecg_strip_transformed
 
 
 
-    def plot(self, idx, channel_ids=[0,1,2,3,4,5,6,7,8,9,10,11], reconstructed=False):
+    def plot(self, idx, channel_ids=[0,1,2,3,4,5,6,7,8,9,10,11], reconstructed=False, predicted=False):
         """Plot the ECG channels
         if reconstructed = True, the signal is reconstructed
         from the Fourier Transform"""
@@ -122,13 +125,16 @@ class INCART_LOADER(data.Dataset):
         else: 
             ecg = self.df.ecg[idx]
         fig, axs = plt.subplots(len(channel_ids),1)
-        fig.suptitle(f"Reconstructed: {reconstructed},\n"
-                    f"beat type: {self.df.annotation[idx]},\n"
-                    f"channel(s): {channel_ids}")
+        fig.tight_layout()
+        fig.suptitle(f"Reconstructed: {reconstructed}, beat type: {self.df.annotation[idx]}")
         for i in range(len(channel_ids)):
-            axs[i].plot(ecg[channel_ids[i]])
+            axs[i].plot(ecg[channel_ids[i]], label="ground truth")
+            #axs[i].set_title(f"Channel {channel_ids[i]+1}")
+            if predicted:
+                axs[i].plot(self.df.ecg_pred[idx][channel_ids[i]], label="predicted")
+        #fig.legend()
 
-        plt.savefig(f"figures/sample_plots/sample_{idx}_reconstructed_{reconstructed}.png")
+        plt.savefig(f"figures/sample_plots/sample_{idx}_reconstructed_{reconstructed}_predicted_{predicted}.png")
 
 
     def create_data_set(self):
@@ -137,8 +143,8 @@ class INCART_LOADER(data.Dataset):
         set_dict = dict()
         set_dict['ecg'] = []
         set_dict['stft'] = []
-        #set_dict['stft_pred'] = []
-        #set_dict['ecg_reconstructed'] = []
+        set_dict['stft_pred'] = []
+        set_dict['ecg_pred'] = []
         set_dict['annotation'] = []
 
 
@@ -149,6 +155,8 @@ class INCART_LOADER(data.Dataset):
             for ecg_strip, annotation_strip, ecg_strip_transformed in zip(ecg_strips, annotation_strips, ecg_strips_transformed):
                 set_dict['ecg'].append(ecg_strip)
                 set_dict['stft'].append(np.stack(ecg_strip_transformed))
+                set_dict['stft_pred'].append([])
+                set_dict['ecg_pred'].append([])
                 set_dict['annotation'].append(annotation_strip)
         df = pd.DataFrame(set_dict)
 
@@ -157,7 +165,7 @@ class INCART_LOADER(data.Dataset):
     def reconstruct_signal(self, idx, prediction=False):
         """Reconstruct a signal from the FFT of the signal"""
         if prediction:
-            stft = self.df.prediction[idx]
+            stft = self.df.stft_pred[idx].squeeze()
         else:
             stft = self.df.stft[idx]
         ecg = self.df.ecg[idx]
@@ -168,3 +176,34 @@ class INCART_LOADER(data.Dataset):
         return np.array(reconstructed_signal)
 
 
+    def predict(self, idx, model, device, default_dtype):
+        """Make a prediction using a trained model
+        Input: 
+            idx (int): sample ID
+            model (torch): model """
+
+        input = torch.tensor(self.__getitem__(idx)['x']).to(device, dtype=default_dtype)
+        prediction = model(input[None,:])
+        self.df.loc[idx, "stft_pred"] = prediction.cpu().detach().numpy()
+        self.df.loc[idx, "ecg_pred"] = self.reconstruct_signal(idx, prediction=True)
+        
+        #self.plot(idx, predicted=True)
+
+    def predict_all(self, model, device, default_dtype):
+        print("Making predictions on entire set...")
+        print(self.__len__())
+        print(len(self.df))
+        for i in tqdm(range(self.__len__())):
+            self.predict(i, model, device, default_dtype)
+
+    def calculate_error(self):
+        self.df["mse"] = self.df.apply(lambda row: mean_squared_error(row['ecg_pred'], row['ecg']), axis=1)
+        print(f"MSE: {self.df["mse"].mean()}")
+
+
+class IN_subset(Subset):
+    def __init__(self, dataset, indices):
+        super().__init__(dataset, indices)
+
+    def __getattr__(self, name):
+        return getattr(self.dataset, name)
