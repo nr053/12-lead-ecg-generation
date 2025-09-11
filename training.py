@@ -13,7 +13,7 @@ scripts but are for now written explicitly to facilitate interaction with variab
 for debugging purposes.
 """
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from torch import nn
 from tqdm import tqdm
 import torch
@@ -23,25 +23,24 @@ import os
 import math
 from unet import UNet
 
-from load_incart import INCART_LOADER
+from load_incart import INCART_LOADER, IN_subset
 import yaml
 
+#load config
 config = yaml.safe_load(open(f"{os.getcwd()}/config.yaml"))
 
 #load dataset into custom data class
 dataset = INCART_LOADER(config['path_to_data'], config["window_size"], config["hop"], config["s_freq"], config["channel_map"])
 
 #make train/test split
-
+train_size = int(len(dataset)*0.9)
+dataset_train = IN_subset(dataset, list(range(0,train_size)))
+dataset_val = IN_subset(dataset, list(range(train_size, len(dataset))))
 
 #dataloaders
-dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False)
-# train_dataloader = DataLoader(train_set, batch_size=config.batch_size, shuffle=True)
-# test_dataloader = DataLoader(test_set, batch_size=config.batch_size, shuffle=True)
-#dataloaders
-
-
-#define model and hyperparameters
+#dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False)
+dataloader_train = DataLoader(dataset_train, batch_size=config['batch_size'], shuffle=True)
+dataloader_val = DataLoader(dataset_val, batch_size=config['batch_size'], shuffle=True)
 
 #GPU stuff
 if torch.cuda.is_available(): #for NVIDIA graphics card
@@ -54,130 +53,80 @@ torch.set_default_dtype(default_dtype)
 print(f"Using device {device}")
 #model definition and hyperparameters
 model = UNet().to(device)
-learning_rate = 10e-3
-n_epochs = 100
+learning_rate = 10e-5
+n_epochs = 10
 #drop out = 0.5, 0.1
 loss_fn = nn.MSELoss() #or RMSE???
 optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-
-
-
-# # # def train_loop(model, dataloader, loss_fn):
-# # #     batch_loss = []
-# # #     loop = tqdm(dataloader)
-# # #     for sample in loop:
-# # #         #make prediction
-# # #         sample['prediction'] = model(sample['X'])
-        
-# # #         #calculate loss
-# # #         loss = loss_fn(sample['prediction'], sample['y'])
-# # #         batch_loss.append(loss)
-# # #         #calculate accuracy
-
-
-# # #         #backpropogation step
-# # #         optimiser.zero_grad()
-# # #         loss.backward()
-# # #         optimiser.step()
-
-# # #     return batch_loss
-
-epoch_loss = []
-#epoch_loss_test = []
+#init empty lists to track loss
+epoch_loss_train = []
+epoch_loss_val = []
 current_epoch = 1
 
 
 for epoch in tqdm(range(n_epochs)):
     #train step
-    print("")
-    print("-------- Training loop ----------")
-    print("")
     model.train()
-    
-    batch_loss = []
-    loop = tqdm(dataloader)
-    
-
-    for sample in loop:
+    batch_loss_train = []
+    #loop = tqdm(dataloader)
+    for sample in dataloader_train:
         #make prediction
         prediction = model(sample['x'].to(device, dtype=default_dtype)) #first 3 leads as input
         
         #calculate loss
         loss = loss_fn(prediction.to(device, dtype=default_dtype), sample['y'].to(device, dtype=default_dtype)) #all 12 leads as ground truth
-        batch_loss.append(loss.item())
+        batch_loss_train.append(loss.item())
 
         #backpropogation step
         optimiser.zero_grad()
         loss.backward()
         optimiser.step()
 
-        #data.add_prediction(sample)
+    epoch_loss_train.append(mean(batch_loss_train))
+    
+    #validation step
+    model.eval()
+    batch_loss_val = []
+    with torch.no_grad():
+        #loop = tqdm(dataloader_val)
+        for sample in dataloader_val:
+            #make prediction
+            prediction = model(sample['x'].to(device, dtype=default_dtype))
 
-    #track mean train batch loss over epochs
-    #train_loss = batch_loss_train
-    #train_loss = train_loop(model, dataloader, loss_fn)
-    current_epoch_loss = mean(batch_loss)
+            #calculate loss
+            loss = loss_fn(prediction.to(device, dtype=default_dtype), sample['y'].to(device, dtype=default_dtype)) #all 12 leads as ground truth
+            batch_loss_val.append(loss.item())
+
+    #track mean test batch loss over epochs    
+    current_loss = mean(batch_loss_val)    
 
     if current_epoch == 1: #on first epoch add epoch loss to empty list and set best epoch == 1
         best_epoch = current_epoch
-    elif current_epoch_loss < min(epoch_loss): #check if current epoch yielded better performance
+    elif current_loss < min(epoch_loss_val): #check if current epoch yielded better performance
         best_epoch = current_epoch
-        torch.save(model.state_dict(), f"/state_dicts/u_net_lr_{learning_rate}_epoch_{best_epoch}.pt")
+        best_model_state = model.state_dict()
+    current_epoch += 1
+    epoch_loss_val.append(current_loss)
 
-    epoch_loss.append(current_epoch_loss)
-    
+#save the best model state dict
+torch.save(best_model_state, f"state_dicts/u_net_{optimiser.__class__.__name__}_lr_{learning_rate}_epoch_{best_epoch}_val_norm.pt")
 
-    
-
-
-#     #test step
-#     print("")
-#     print("-------- Testing loop ----------")
-#     print("")
-#     model.eval()
-#     batch_loss_test = []
-
-#     with torch.no_grad():
-#         loop = tqdm(test_dataloader)
-#         for sample in loop:
-#             #make prediction
-#             sample['prediction'] = model(sample['X'].cuda())
-
-#             #calculate loss
-#             loss = loss_fn(sample['prediction'].cuda(), sample['y'][:,None,:].cuda())
-#             batch_loss_test.append(loss.item())
-
-#             #accuracy?
-
-#             data.add_prediction(sample)
-
-#     #track mean test batch loss over epochs        
-#     epoch_loss_test.append(mean(batch_loss_test))
- 
-#     if epoch_number % 100 == 0:
-#         plt.plot(epoch_loss_train)
-#         plt.plot(epoch_loss_test)
-#         plt.savefig("loss_plot" + str(epoch_number) + ".png")
-#     epoch_number+=1
-
-
-plt.plot(epoch_loss)
+#plot loss
+plt.plot(epoch_loss_train, label="train")
+plt.plot(epoch_loss_val, label="val")
+plt.legend()
 plt.ylabel(f"Loss: {loss_fn}")
-plt.title(f"LR: {learning_rate}, optimiser: {optimiser}, best epoch: {best_epoch}")
-plt.savefig(f"figures/loss_plots/loss_plot_LR_{learning_rate}.png")
+plt.title(f"LR: {learning_rate}, optimiser: {optimiser.__class__.__name__}, best epoch: {best_epoch}")
+plt.savefig(f"figures/loss_plots/loss_plot_LR_{learning_rate}_val_norm.png")
 
 
 
+model.load_state_dict(best_model_state)
+model.eval()
 
-# model.eval()
-# torch.no_grad()
+#get collection of random samples
+#dataset_val.predict(3,model, device, default_dtype)
 
-
-
-    
-#torch.save(model.state_dict(), "CNN.pt")
-
-
-
-
+dataset_val.predict_all(model, device, default_dtype)
+dataset_val.calculate_error()
