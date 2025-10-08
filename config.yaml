@@ -1,6 +1,6 @@
 #repo config
 #path_to_data: "/Users/toucanfirm/Documents/Zibra/dev/Cortrium/12-lead-ecg-generation/data/incart/physionet.org/files/incartdb/1.0.0"
-path_to_data: "/home/rose/Cortrium/12-lead-ecg-generation/data/files/incartdb/1.0.0"
+path_to_data: "/home/rose/Cortrium/12-lead-ecg-generation/data/INCART/"
 #model parameters
 s_freq: 257
 channel_map: [0,1,2]
@@ -10,4 +10,4 @@ hop: 20
 #training parameters
 batch_size: 32
 learning_rate: 0.0001 #10e-5
-n_epochs: 200
+n_epochs: 100

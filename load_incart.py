@@ -15,17 +15,22 @@ from torch.utils.data import Subset
 import torch.nn.functional as F
 from tqdm import tqdm
 from sklearn.metrics import mean_squared_error
+import scipy
+from sklearn.utils import shuffle
 
-class INCART_LOADER(data.Dataset):
+class INCART_Dataset(data.Dataset):
     def __init__(self, path, window_size, hop, fs, channel_map):
-        self.path = path
         self.fs = fs
         self.channel_map = channel_map
         #fourier transform stuff
         w = scipy.signal.windows.hann(window_size)
         self.SFT = scipy.signal.ShortTimeFFT(w, hop=hop, fs=self.fs)
         #dataframe
+        self.path = path
         self.df = self.create_data_set()
+
+        #preprocessing
+        self.scaler = preprocessing.MinMaxScaler()
 
     def __len__(self):
         return len(self.df)
@@ -54,8 +59,6 @@ class INCART_LOADER(data.Dataset):
                 possibly with metadata of patient / record ????
 
         """
-        print(f"Loading file: {filename}")
-        
         #load the file into a WFDB record object
         signal = wfdb.rdrecord(filename)
         annotation = wfdb.rdann(filename, extension="atr") 
@@ -64,6 +67,8 @@ class INCART_LOADER(data.Dataset):
         #b, a = scipy.signal.butter(5, [3, 50], btype='bandpass', fs=257)
         #signal_filtered = scipy.signal.lfilter(b, a, signal.p_signal)
         signal_filtered = signal.p_signal #currently no filtering
+
+        scaler = preprocessing.MinMaxScaler()
 
         #init lists to build set dict
         ecg_strips = []
@@ -79,20 +84,72 @@ class INCART_LOADER(data.Dataset):
             return 
         else:
             
+            #each input snippet is centred around a beat
             for beat_position, beat_annotation in zip(annotation.sample, annotation.symbol):
                 #there must be 0.5 seconds of signal either side of the beat position
                 if (beat_position > 128) and (beat_position < signal_filtered.shape[0] - 128): 
                     ecg_strip = signal_filtered[beat_position-128:beat_position+128,:]
                     ecg_strip = np.swapaxes(ecg_strip, 0, 1)
-                    ecg_strip = preprocessing.normalize(ecg_strip, axis=1) #normalise
-                    ecg_strips.append(ecg_strip)
+
+                    ####
+                    ####TESTING VARIOUS FORMS OF NORMALISATION 
+                    ####
+
+                    # #1. no normalisation of ECG strip
+                    # ecg_strip_normalised = ecg_strip
+                    
+                    # #2. normalise ECG strip to unit vector
+                    # ecg_strip_normalised = preprocessing.normalize(ecg_strip, axis=1) #normalise
+
+                    #3. normalise ECG strip to [0,1] range
+                    ecg_normalised_channels = []
+                    for channel in ecg_strip: 
+                        ecg_normalised_channels.append(scaler.fit_transform(channel.reshape(-1,1)))
+                    ecg_strip_normalised = np.array(ecg_normalised_channels)[:,:,-1]
+                    
+                    ### END OF NORMALISATION ####
+
+                    #append normalised strip
+                    ecg_strips.append(ecg_strip_normalised)
+                    
+                    #append beat annotation
                     annotation_strips.append(beat_annotation)
 
-                    #preprocessing step
-                    ecg_strip_transformed = self.preprocess(ecg_strip)
+                    #preprocessing step (fourier transform)
+                    ecg_strip_transformed = self.preprocess(ecg_strip_normalised)
                     ecg_strips_transformed.append(ecg_strip_transformed)
 
-        return ecg_strips, annotation_strips, ecg_strips_transformed, signal, annotation
+            # #input snippets are chopped regardless of beat position
+            # index = 0
+            # while index <= signal_filtered.shape[0] - 256: #only include strips of 256 length
+            #     ecg_strip = signal_filtered[index:index+256,:]
+            #     ecg_strip = np.swapaxes(ecg_strip, 0, 1)
+
+            #     ecg_normalised_channels = []
+            #     for channel in ecg_strip: 
+            #         ecg_normalised_channels.append(scaler.fit_transform(channel.reshape(-1,1)))
+            #     ecg_strip_normalised = np.array(ecg_normalised_channels)[:,:,-1]
+
+            #     #append normalised strip
+            #     ecg_strips.append(ecg_strip_normalised)
+                
+            #     #append beat annotation
+            #     beat_annotations = ""
+            #     for beat_position, beat_annotation in zip(annotation.sample, annotation.symbol):
+            #         if index <= beat_position <= index+256:
+            #             beat_annotations += beat_annotation    
+            #     annotation_strips.append(beat_annotations)
+
+            #     #preprocessing step (fourier transform)
+            #     ecg_strip_transformed = self.preprocess(ecg_strip_normalised)
+            #     ecg_strips_transformed.append(ecg_strip_transformed)
+
+            #     index += 256
+
+            
+
+
+        return ecg_strips, annotation_strips, ecg_strips_transformed
 
 
     def preprocess(self, ecg_strip):
@@ -112,7 +169,7 @@ class INCART_LOADER(data.Dataset):
             ecg_strip_transformed.append(Sx.real)
             ecg_strip_transformed.append(Sx.imag)
             
-        return ecg_strip_transformed
+        return np.stack(ecg_strip_transformed)
 
 
 
@@ -132,13 +189,16 @@ class INCART_LOADER(data.Dataset):
             #axs[i].set_title(f"Channel {channel_ids[i]+1}")
             if predicted:
                 axs[i].plot(self.df.ecg_pred[idx][channel_ids[i]], label="predicted")
+        
+        
         #fig.legend()
 
         plt.savefig(f"figures/sample_plots/sample_{idx}_reconstructed_{reconstructed}_predicted_{predicted}.png")
 
 
     def create_data_set(self):
-        filenames = glob.glob(self.path + '/*.dat') #find all the filenames with .dat file extension
+        #filenames = glob.glob(self.path + '**/*.dat', recursive=True) #find all the filenames with .dat file extension
+        filenames = [self.path]
 
         set_dict = dict()
         set_dict['ecg'] = []
@@ -146,19 +206,32 @@ class INCART_LOADER(data.Dataset):
         set_dict['stft_pred'] = []
         set_dict['ecg_pred'] = []
         set_dict['annotation'] = []
+        set_dict['recording'] = []
 
-
-        #TESTING WITH ONLY ONE FILE
-        for file in tqdm(filenames[0:1]):
-            ecg_strips, annotation_strips, ecg_strips_transformed, signal, annotation = self.load_file(file.removesuffix(".dat"))
-
+        for file in tqdm(filenames, desc="Processing"):
+            tqdm.write(f"loading file: {file}")
+            ecg_strips, annotation_strips, ecg_strips_transformed = self.load_file(file.removesuffix(".dat"))
             for ecg_strip, annotation_strip, ecg_strip_transformed in zip(ecg_strips, annotation_strips, ecg_strips_transformed):
                 set_dict['ecg'].append(ecg_strip)
-                set_dict['stft'].append(np.stack(ecg_strip_transformed))
+                set_dict['stft'].append(ecg_strip_transformed)
                 set_dict['stft_pred'].append([])
                 set_dict['ecg_pred'].append([])
                 set_dict['annotation'].append(annotation_strip)
+                set_dict['recording'].append(file.split("/")[-1].removesuffix(".dat"))
         df = pd.DataFrame(set_dict)
+
+        #balance the dataset
+        #find indices to drop
+        n_indices = df[df["annotation"] == "N"].index
+        n_indices = shuffle(n_indices)[len(n_indices)-2000:]
+        v_indices = df[df["annotation"] == "V"].index
+        v_indices = shuffle(v_indices)[len(v_indices)-2000:]
+        r_indices = df[df["annotation"] == "R"].index
+        r_indices = shuffle(r_indices)[len(r_indices)-2000:]
+        #drop indices
+        indices = n_indices.to_list() + v_indices.to_list() + r_indices.to_list()
+        df = df.drop(indices)
+
 
         return df
 
@@ -185,25 +258,86 @@ class INCART_LOADER(data.Dataset):
         input = torch.tensor(self.__getitem__(idx)['x']).to(device, dtype=default_dtype)
         prediction = model(input[None,:])
         self.df.loc[idx, "stft_pred"] = prediction.cpu().detach().numpy()
-        self.df.loc[idx, "ecg_pred"] = self.reconstruct_signal(idx, prediction=True)
+        reconstructed_signal = self.reconstruct_signal(idx, prediction=True)
+        self.df.loc[idx, "ecg_pred"] = reconstructed_signal
         
         #self.plot(idx, predicted=True)
 
     def predict_all(self, model, device, default_dtype):
         print("Making predictions on entire set...")
-        print(self.__len__())
-        print(len(self.df))
         for i in tqdm(range(self.__len__())):
             self.predict(i, model, device, default_dtype)
 
     def calculate_error(self):
         self.df["mse"] = self.df.apply(lambda row: mean_squared_error(row['ecg_pred'], row['ecg']), axis=1)
-        print(f"MSE: {self.df["mse"].mean()}")
 
 
-class IN_subset(Subset):
-    def __init__(self, dataset, indices):
-        super().__init__(dataset, indices)
+
+class INCART_Subset(Subset):
+    def __init__(self, path, window_size, hop, fs, channel_map):
+        super().__init__()
+        self.df = self.df(dataset, indices)
 
     def __getattr__(self, name):
         return getattr(self.dataset, name)
+
+
+# class PTB_LOADER(INCART_LOADER):
+#     def __init__(self, path, window_size, hop, fs, channel_map, patient):
+#         self.fs = fs
+#         self.channel_map = channel_map
+#         #fourier transform stuff
+#         w = scipy.signal.windows.hann(window_size)
+#         self.SFT = scipy.signal.ShortTimeFFT(w, hop=hop, fs=self.fs)
+#         #dataframe
+#         self.df = self.create_data_set(path + "/PTB/physionet.org/files/ptbdb/1.0.0/" + patient)
+
+
+#     def load_file(self, filename):
+#         """The procedure to handle a record:
+#             - create 0.5s strip with beat in the middle
+#             - along with beat annotation
+        
+#         input: path to file (string)
+#         ouput: array with signal data and accompanying annotation label
+#                 possibly with metadata of patient / record ????
+
+#         """
+#         #load the file into a WFDB record object
+#         signal = wfdb.rdrecord(filename)
+#         annotation = wfdb.rdann(filename, extension="atr") 
+
+#         #filter the signal
+#         #b, a = scipy.signal.butter(5, [3, 50], btype='bandpass', fs=257)
+#         #signal_filtered = scipy.signal.lfilter(b, a, signal.p_signal)
+#         signal_filtered = scipy.signal.decimate(signal.p_signal, 2) #currently no filtering, now including downsampling for PTB set
+        
+
+#         #init lists to build set dict
+#         ecg_strips = []
+#         annotation_strips = []
+#         ecg_strips_transformed = []
+
+#         #check that the signal sampling freq matches the annotation s_freq and is 257
+#         if signal.fs != annotation.fs:
+#             print("reported sampling frequencies do not match")
+#             return
+#         elif signal.fs != self.fs:
+#             print("sampling frequency is not 257")
+#             return 
+#         else:
+            
+#             for beat_position, beat_annotation in zip(annotation.sample, annotation.symbol):
+#                 #there must be 0.5 seconds of signal either side of the beat position
+#                 if (beat_position > 128) and (beat_position < signal_filtered.shape[0] - 128): 
+#                     ecg_strip = signal_filtered[beat_position-128:beat_position+128,:]
+#                     ecg_strip = np.swapaxes(ecg_strip, 0, 1)
+#                     ecg_strip = preprocessing.normalize(ecg_strip, axis=1) #normalise
+#                     ecg_strips.append(ecg_strip)
+#                     annotation_strips.append(beat_annotation)
+
+#                     #preprocessing step
+#                     ecg_strip_transformed = self.preprocess(ecg_strip)
+#                     ecg_strips_transformed.append(ecg_strip_transformed)
+
+#         return ecg_strips, annotation_strips, ecg_strips_transformed, signal, annotation
