@@ -20,7 +20,7 @@ config = yaml.safe_load(open(f"{os.getcwd()}/config.yaml"))
 
 #all files that the model should use for training and testing
 filenames = glob.glob("/home/rose/Cortrium/12-lead-ecg-generation/data/INCART/" + '/**/*.dat', recursive=True) #find all the filenames with .dat file extension
-filenames = filenames[:20] #only use 20 files
+filenames = filenames[:1] #only use 20 files
 
 results_dict = dict()
 results_dict["file"] = []
@@ -37,9 +37,11 @@ for file in tqdm(filenames, desc="Processing"):
     generator = torch.Generator().manual_seed(42)
 
     #make train/val split (currently no test split)
-    train_size = int(len(dataset)*0.5)
-    val_size = len(dataset) - train_size
-    subset_train, subset_val = random_split(dataset, [train_size, val_size], generator=generator)
+    set_size = len(dataset)
+    train_size = int(set_size*0.7) #70% of data
+    val_size = int(set_size*0.2) #20% of data
+    test_size = set_size - (train_size + val_size) #remaining 10% of data
+    subset_train, subset_val, subset_test = random_split(dataset, [train_size, val_size, test_size], generator=generator)
 
     #train
     train = Train_class(model_tag=tag, train_set=subset_train, val_set=subset_val)
@@ -48,7 +50,7 @@ for file in tqdm(filenames, desc="Processing"):
     #test
     test = Test_class(model_tag=model_name, dataset=dataset)
     test.predict()
-    df_test = dataset.df.loc[subset_val.indices] #only calculate MSE on validation set (should obvs be test set)
+    df_test = dataset.df.loc[subset_test.indices] #only calculate MSE on validation set (should obvs be test set)
     mse = df_test["mse"].mean()
     results_dict["file"].append(tag)
     results_dict["mse"].append(mse)

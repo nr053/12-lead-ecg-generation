@@ -3,7 +3,7 @@
 path_to_data: "/home/rose/Cortrium/12-lead-ecg-generation/data/INCART/"
 #model parameters
 s_freq: 257
-channel_map: [0,1,2]
+channel_map: [0,1,8] #[I, II, V3]
 window_size: 30
 hop: 20
 
