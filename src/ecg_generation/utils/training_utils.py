@@ -21,12 +21,12 @@ from statistics import mean
 import matplotlib.pyplot as plt
 import os
 import math
-from unet import UNet
+from ecg_generation.utils.unet import UNet
 import yaml
 
 
 class Train_class():
-    def __init__(self, model_tag, train_set, val_set):
+    def __init__(self, directory, model_tag, train_set, val_set):
         #load config
         config = yaml.safe_load(open(f"{os.getcwd()}/config.yaml"))        
 
@@ -61,6 +61,7 @@ class Train_class():
         #drop out = 0.5, 0.1
         self.loss_fn = nn.MSELoss() #or RMSE???
         self.optimiser = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        self.directory = directory
         self.model_tag = model_tag
 
     def train_loop(self, n_epochs):
@@ -115,7 +116,7 @@ class Train_class():
             epoch_loss_val.append(current_loss)
 
         #save the best model state dict
-        model_name = f"state_dicts/normalise/u_net_{self.model_tag}_{self.optimiser.__class__.__name__}_lr_{self.learning_rate}_epoch_{best_epoch}.pt"
+        model_name = f"state_dicts/{self.directory}/{self.model_tag}_epoch_{best_epoch}.pt"
         torch.save(best_model_state, model_name)
         self.best_model_state = best_model_state
 
@@ -125,8 +126,8 @@ class Train_class():
         plt.plot(epoch_loss_val, label="val")
         plt.legend()
         plt.ylabel(f"Loss: {self.loss_fn}")
-        plt.title(f"Model: {self.model_tag}, LR: {self.learning_rate}, optimiser: {self.optimiser.__class__.__name__}, best epoch: {best_epoch}")
-        plt.savefig(f"figures/loss_plots/normalise/loss_plot_{self.model_tag}_LR_{self.learning_rate}.png")
+        plt.title(f"Model: {self.model_tag}, best epoch: {best_epoch}")
+        plt.savefig(f"figures/loss_plots/{self.directory}/loss_plot_{self.model_tag}.png")
 
         return model_name
 
@@ -159,5 +160,6 @@ class Test_class():
         self.model.eval()
 
     def predict(self):
-        self.dataset.predict_all(self.model, self.device, self.default_dtype)
-        self.dataset.calculate_error()
+        with torch.no_grad():
+            self.dataset.predict_all(self.model, self.device, self.default_dtype)
+            self.dataset.calculate_error()

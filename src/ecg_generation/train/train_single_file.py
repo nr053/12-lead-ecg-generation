@@ -2,14 +2,13 @@ import wfdb
 import glob
 from tqdm import tqdm
 import statistics
-from unet import UNet
-from load_incart import INCART_Dataset
+from ecg_generation.utils.unet import UNet
+from ecg_generation.loading.incart_recording import INCART_recording
+from ecg_generation.utils.training_utils import Train_class, Test_class
 import yaml
 import random
 import torch
 import os
-from training_utils import Train_class, Test_class
-from unet import UNet
 import pandas as pd
 from torch.utils.data import random_split
 import random
@@ -18,20 +17,22 @@ import random
 config = yaml.safe_load(open(f"{os.getcwd()}/config.yaml"))
 
 
-#all files that the model should use for training and testing
+#all recordings in the INCART data set
 filenames = glob.glob("/home/rose/Cortrium/12-lead-ecg-generation/data/INCART/" + '/**/*.dat', recursive=True) #find all the filenames with .dat file extension
-filenames = filenames[:1] #only use 20 files
 
 results_dict = dict()
 results_dict["file"] = []
 results_dict["mse"] = []
+results_dict["r2"] = []
+results_dict["pc"] = []
 
-for file in tqdm(filenames, desc="Processing"):
-    tqdm.write(f"Handling file: {file}")
+for file in tqdm(filenames, desc="creating dataset"):
     tag = file.split("/")[-1].removesuffix(".dat")
 
     #load dataset into custom data class
-    dataset = INCART_Dataset(file, config["window_size"], config["hop"], config["s_freq"], config["channel_map"])
+    dataset = INCART_recording(file, 
+                            config,
+                            )
 
     #set fixed seed
     generator = torch.Generator().manual_seed(42)
@@ -44,16 +45,20 @@ for file in tqdm(filenames, desc="Processing"):
     subset_train, subset_val, subset_test = random_split(dataset, [train_size, val_size, test_size], generator=generator)
 
     #train
-    train = Train_class(model_tag=tag, train_set=subset_train, val_set=subset_val)
-    model_name = train.train_loop(n_epochs=200)
+    train = Train_class(directory="single_file", model_tag=tag, train_set=subset_train, val_set=subset_val)
+    model_name = train.train_loop(n_epochs=300)
 
     #test
     test = Test_class(model_tag=model_name, dataset=dataset)
     test.predict()
-    df_test = dataset.df.loc[subset_test.indices] #only calculate MSE on validation set (should obvs be test set)
+    df_test = dataset.df.loc[subset_test.indices] #only calculate MSE on test set
     mse = df_test["mse"].mean()
+    r2 = df_test["r2"].mean()
+    pc = df_test["pc"].mean()
     results_dict["file"].append(tag)
     results_dict["mse"].append(mse)
+    results_dict["r2"].append(r2)
+    results_dict["pc"].append(pc)
 
 df = pd.DataFrame(results_dict)
 
